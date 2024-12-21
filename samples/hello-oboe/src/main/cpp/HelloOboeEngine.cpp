@@ -35,8 +35,8 @@
  *
  */
 HelloOboeEngine::HelloOboeEngine()
-        : mLatencyCallback(std::make_unique<LatencyTuningCallback>()),
-        mErrorCallback(std::make_unique<DefaultErrorCallback>(*this)) {
+        : mLatencyCallback(std::make_shared<LatencyTuningCallback>()),
+        mErrorCallback(std::make_shared<DefaultErrorCallback>(*this)) {
 }
 
 double HelloOboeEngine::getCurrentOutputLatencyMillis() {
@@ -68,30 +68,6 @@ void HelloOboeEngine::setBufferSizeInBursts(int32_t numBursts) {
     }
 }
 
-void HelloOboeEngine::setAudioApi(oboe::AudioApi audioApi) {
-    if (mAudioApi != audioApi) {
-        mAudioApi = audioApi;
-        reopenStream();
-    }
-}
-
-void HelloOboeEngine::setChannelCount(int channelCount) {
-    if (mChannelCount != channelCount) {
-        mChannelCount = channelCount;
-        reopenStream();
-    }
-}
-
-void HelloOboeEngine::setDeviceId(int32_t deviceId) {
-    if (mDeviceId != deviceId) {
-        mDeviceId = deviceId;
-        if (reopenStream() != oboe::Result::OK) {
-            LOGW("Open stream failed, forcing deviceId to Unspecified");
-            mDeviceId = oboe::Unspecified;
-        }
-    }
-}
-
 bool HelloOboeEngine::isLatencyDetectionSupported() {
     return mIsLatencyDetectionSupported;
 }
@@ -112,8 +88,8 @@ oboe::Result HelloOboeEngine::openPlaybackStream() {
         ->setPerformanceMode(oboe::PerformanceMode::LowLatency)
         ->setFormat(oboe::AudioFormat::Float)
         ->setFormatConversionAllowed(true)
-        ->setDataCallback(mLatencyCallback.get())
-        ->setErrorCallback(mErrorCallback.get())
+        ->setDataCallback(mLatencyCallback)
+        ->setErrorCallback(mErrorCallback)
         ->setAudioApi(mAudioApi)
         ->setChannelCount(mChannelCount)
         ->setDeviceId(mDeviceId)
@@ -130,32 +106,50 @@ void HelloOboeEngine::restart() {
     start();
 }
 
+oboe::Result HelloOboeEngine::start(oboe::AudioApi audioApi, int deviceId, int channelCount) {
+    mAudioApi = audioApi;
+    mDeviceId = deviceId;
+    mChannelCount = channelCount;
+    return start();
+}
+
 oboe::Result HelloOboeEngine::start() {
     std::lock_guard<std::mutex> lock(mLock);
-    mIsLatencyDetectionSupported = false;
-    auto result = openPlaybackStream();
-    if (result == oboe::Result::OK){
-        mAudioSource =  std::make_shared<SoundGenerator>(mStream->getSampleRate(),
-                mStream->getChannelCount());
-        mLatencyCallback->setSource(std::dynamic_pointer_cast<IRenderableAudio>(mAudioSource));
+    oboe::Result result = oboe::Result::OK;
+    // It is possible for a stream's device to become disconnected during the open or between
+    // the Open and the Start.
+    // So if it fails to start, close the old stream and try again.
+    int tryCount = 0;
+    do {
+        if (tryCount > 0) {
+            usleep(20 * 1000); // Sleep between tries to give the system time to settle.
+        }
+        mIsLatencyDetectionSupported = false;
+        result = openPlaybackStream();
+        if (result == oboe::Result::OK) {
+            mAudioSource = std::make_shared<SoundGenerator>(mStream->getSampleRate(),
+                                                            mStream->getChannelCount());
+            mLatencyCallback->setSource(
+                    std::dynamic_pointer_cast<IRenderableAudio>(mAudioSource));
 
-        LOGD("Stream opened: AudioAPI = %d, channelCount = %d, deviceID = %d",
+            LOGD("Stream opened: AudioAPI = %d, channelCount = %d, deviceID = %d",
                  mStream->getAudioApi(),
                  mStream->getChannelCount(),
                  mStream->getDeviceId());
 
-        result = mStream->start();
-        if (result != oboe::Result::OK) {
-            LOGE("Error starting playback stream. Error: %s", oboe::convertToText(result));
-            mStream->close();
-            mStream.reset();
+            result = mStream->requestStart();
+            if (result != oboe::Result::OK) {
+                LOGE("Error starting playback stream. Error: %s", oboe::convertToText(result));
+                mStream->close();
+                mStream.reset();
+            } else {
+                mIsLatencyDetectionSupported = (mStream->getTimestamp((CLOCK_MONOTONIC)) !=
+                                                oboe::Result::ErrorUnimplemented);
+            }
         } else {
-            mIsLatencyDetectionSupported = (mStream->getTimestamp((CLOCK_MONOTONIC)) !=
-                                            oboe::Result::ErrorUnimplemented);
+            LOGE("Error creating playback stream. Error: %s", oboe::convertToText(result));
         }
-    } else {
-        LOGE("Error creating playback stream. Error: %s", oboe::convertToText(result));
-    }
+    } while (result != oboe::Result::OK && tryCount++ < 3);
     return result;
 }
 

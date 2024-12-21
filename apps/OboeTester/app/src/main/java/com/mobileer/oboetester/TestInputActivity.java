@@ -17,17 +17,16 @@
 package com.mobileer.oboetester;
 
 import android.content.Intent;
-import android.media.audiofx.AcousticEchoCanceler;
-import android.media.audiofx.AutomaticGainControl;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
-import android.support.annotation.NonNull;
-import android.support.v4.content.FileProvider;
 import android.view.View;
 import android.widget.RadioButton;
+
+import androidx.annotation.NonNull;
+import androidx.core.content.FileProvider;
 
 import java.io.File;
 import java.io.IOException;
@@ -39,10 +38,11 @@ import java.io.IOException;
 public class TestInputActivity  extends TestAudioActivity {
 
     protected AudioInputTester mAudioInputTester;
-    private static final int NUM_VOLUME_BARS = 4;
+    // Note that this must match the number of volume bars defined in the layout file.
+    private static final int NUM_VOLUME_BARS = 8;
     private VolumeBarView[] mVolumeBars = new VolumeBarView[NUM_VOLUME_BARS];
     private InputMarginView mInputMarginView;
-    private int mInputMarginBursts = 0;
+    int mInputMarginBursts = 0;
     private WorkloadView mWorkloadView;
 
     public native void setMinimumFramesBeforeRead(int frames);
@@ -66,6 +66,10 @@ public class TestInputActivity  extends TestAudioActivity {
         mVolumeBars[1] = (VolumeBarView) findViewById(R.id.volumeBar1);
         mVolumeBars[2] = (VolumeBarView) findViewById(R.id.volumeBar2);
         mVolumeBars[3] = (VolumeBarView) findViewById(R.id.volumeBar3);
+        mVolumeBars[4] = (VolumeBarView) findViewById(R.id.volumeBar4);
+        mVolumeBars[5] = (VolumeBarView) findViewById(R.id.volumeBar5);
+        mVolumeBars[6] = (VolumeBarView) findViewById(R.id.volumeBar6);
+        mVolumeBars[7] = (VolumeBarView) findViewById(R.id.volumeBar7);
 
         mInputMarginView = (InputMarginView) findViewById(R.id.input_margin_view);
 
@@ -75,8 +79,10 @@ public class TestInputActivity  extends TestAudioActivity {
 
         mWorkloadView = (WorkloadView) findViewById(R.id.workload_view);
         if (mWorkloadView != null) {
-            mWorkloadView.setAudioStreamTester(mAudioInputTester);
+            mWorkloadView.setWorkloadReceiver((w) -> mAudioInputTester.setWorkload(w));
         }
+
+        mCommunicationDeviceView = (CommunicationDeviceView) findViewById(R.id.comm_device_view);
     }
 
     @Override
@@ -137,11 +143,6 @@ public class TestInputActivity  extends TestAudioActivity {
     public void stopAudio() {
         super.stopAudio();
         resetVolumeBars();
-    }
-
-    @Override
-    protected void toastPauseError(int result) {
-        showToast("Pause not implemented. Returned " + result);
     }
 
     protected int saveWaveFile(File file) {

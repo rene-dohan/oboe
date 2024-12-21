@@ -38,36 +38,24 @@ public:
             : LoopbackProcessor()
             , mInfiniteRecording(64 * 1024) {}
 
-
     virtual bool isOutputEnabled() { return true; }
 
     void setMagnitude(double magnitude) {
         mMagnitude = magnitude;
-        mScaledTolerance = mMagnitude * mTolerance;
+        mScaledTolerance = mMagnitude * getTolerance();
     }
 
+    /**
+     *
+     * @return valid phase or kPhaseInvalid=-999
+     */
     double getPhaseOffset() {
+        ALOGD("%s(), mPhaseOffset = %f\n", __func__, mPhaseOffset);
         return mPhaseOffset;
     }
 
     double getMagnitude() const {
         return mMagnitude;
-    }
-
-    void setInputChannel(int inputChannel) {
-        mInputChannel = inputChannel;
-    }
-
-    int getInputChannel() const {
-        return mInputChannel;
-    }
-
-    void setOutputChannel(int outputChannel) {
-        mOutputChannel = outputChannel;
-    }
-
-    int getOutputChannel() const {
-        return mOutputChannel;
     }
 
     void setNoiseAmplitude(double noiseAmplitude) {
@@ -87,12 +75,21 @@ public:
     }
 
     // advance and wrap phase
+    void incrementInputPhase() {
+        mInputPhase += mPhaseIncrement;
+        if (mInputPhase > M_PI) {
+            mInputPhase -= (2.0 * M_PI);
+        }
+    }
+
+    // advance and wrap phase
     void incrementOutputPhase() {
         mOutputPhase += mPhaseIncrement;
         if (mOutputPhase > M_PI) {
             mOutputPhase -= (2.0 * M_PI);
         }
     }
+
 
     /**
      * @param frameData upon return, contains the reference sine wave
@@ -106,10 +103,10 @@ public:
             incrementOutputPhase();
             output = (sinOut * mOutputAmplitude)
                      + (mWhiteNoise.nextRandomDouble() * getNoiseAmplitude());
-            // ALOGD("sin(%f) = %f, %f\n", mOutputPhase, sinOut,  mPhaseIncrement);
+            // ALOGD("sin(%f) = %f, %f\n", mOutputPhase, sinOut,  kPhaseIncrement);
         }
         for (int i = 0; i < channelCount; i++) {
-            frameData[i] = (i == mOutputChannel) ? output : 0.0f;
+            frameData[i] = (i == getOutputChannel()) ? output : 0.0f;
         }
         return RESULT_OK;
     }
@@ -129,7 +126,18 @@ public:
         double cosMean = mCosAccumulator / mFramesAccumulated;
         double magnitude = 2.0 * sqrt((sinMean * sinMean) + (cosMean * cosMean));
         if (phasePtr != nullptr) {
-            double phase = M_PI_2 - atan2(sinMean, cosMean);
+            double phase;
+            if (magnitude < kMinValidMagnitude) {
+                phase = kPhaseInvalid;
+                ALOGD("%s() mag very low! sinMean = %7.5f, cosMean = %7.5f",
+                      __func__, sinMean, cosMean);
+            } else {
+                phase = atan2(cosMean, sinMean);
+                if (phase == 0.0) {
+                    ALOGD("%s() phase zero! sinMean = %7.5f, cosMean = %7.5f",
+                          __func__, sinMean, cosMean);
+                }
+            }
             *phasePtr = phase;
         }
         return magnitude;
@@ -138,22 +146,29 @@ public:
     /**
      * Perform sin/cos analysis on each sample.
      * Measure magnitude and phase on every period.
+     * Updates mPhaseOffset
      * @param sample
      * @param referencePhase
      * @return true if magnitude and phase updated
      */
-    bool transformSample(float sample, float referencePhase) {
-        // Track incoming signal and slowly adjust magnitude to account
-        // for drift in the DRC or AGC.
-        mSinAccumulator += static_cast<double>(sample) * sinf(referencePhase);
-        mCosAccumulator += static_cast<double>(sample) * cosf(referencePhase);
+    bool transformSample(float sample) {
+        // Compare incoming signal with the reference input sine wave.
+        mSinAccumulator += static_cast<double>(sample) * sinf(mInputPhase);
+        mCosAccumulator += static_cast<double>(sample) * cosf(mInputPhase);
+        incrementInputPhase();
+
         mFramesAccumulated++;
         // Must be a multiple of the period or the calculation will not be accurate.
         if (mFramesAccumulated == mSinePeriod) {
             const double coefficient = 0.1;
             double magnitude = calculateMagnitudePhase(&mPhaseOffset);
-            // One pole averaging filter.
-            setMagnitude((mMagnitude * (1.0 - coefficient)) + (magnitude * coefficient));
+
+            ALOGD("%s(), phaseOffset = %f\n", __func__, mPhaseOffset);
+            if (mPhaseOffset != kPhaseInvalid) {
+                // One pole averaging filter.
+                setMagnitude((mMagnitude * (1.0 - coefficient)) + (magnitude * coefficient));
+            }
+            resetAccumulator();
             return true;
         } else {
             return false;
@@ -176,22 +191,38 @@ public:
     void prepareToTest() override {
         LoopbackProcessor::prepareToTest();
         mSinePeriod = getSampleRate() / kTargetGlitchFrequency;
+        mInputPhase = 0.0f;
         mOutputPhase = 0.0f;
         mInverseSinePeriod = 1.0 / mSinePeriod;
         mPhaseIncrement = 2.0 * M_PI * mInverseSinePeriod;
     }
 
 protected:
-    static constexpr int32_t kTargetGlitchFrequency = 1000;
+    // Try to get a prime period so the waveform plot changes every time.
+    static constexpr int32_t kTargetGlitchFrequency = 48000 / 113;
 
     int32_t mSinePeriod = 1; // this will be set before use
     double  mInverseSinePeriod = 1.0;
     double  mPhaseIncrement = 0.0;
+    // Use two sine wave phases, input and output.
+    // This is because the number of input and output samples may differ
+    // in a callback and the output frame count may advance ahead of the input, or visa versa.
+    double  mInputPhase = 0.0;
     double  mOutputPhase = 0.0;
     double  mOutputAmplitude = 0.75;
+    // This is the phase offset between the mInputPhase sine wave and the recorded
+    // signal at the tuned frequency.
     // If this jumps around then we are probably just hearing noise.
+    // Noise can cause the magnitude to be high but mPhaseOffset will be pretty random.
+    // If we are tracking a sine wave then mPhaseOffset should be consistent.
     double  mPhaseOffset = 0.0;
+    // kPhaseInvalid indicates that the phase measurement cannot be used.
+    // We were seeing times when a magnitude of zero was causing atan2(s,c) to
+    // return a phase of zero, which looked valid to Java. This is a way of passing
+    // an error code back to Java as a single value to avoid race conditions.
+    static constexpr double kPhaseInvalid = -999.0;
     double  mMagnitude = 0.0;
+    static constexpr double kMinValidMagnitude = 2.0 / (1 << 16);
     int32_t mFramesAccumulated = 0;
     double  mSinAccumulator = 0.0;
     double  mCosAccumulator = 0.0;
@@ -200,8 +231,6 @@ protected:
     InfiniteRecording<float> mInfiniteRecording;
 
 private:
-    int32_t mInputChannel = 0;
-    int32_t mOutputChannel = 0;
     float   mTolerance = 0.10; // scaled from 0.0 to 1.0
 
     float mNoiseAmplitude = 0.00; // Used to experiment with warbling caused by DRC.

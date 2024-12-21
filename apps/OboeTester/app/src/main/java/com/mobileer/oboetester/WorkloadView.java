@@ -23,14 +23,22 @@ import android.widget.LinearLayout;
 import android.widget.SeekBar;
 import android.widget.TextView;
 
-public class WorkloadView extends LinearLayout {
+import java.util.Locale;
 
-    private AudioStreamTester mAudioStreamTester;
+public class WorkloadView extends LinearLayout {
 
     protected static final int FADER_PROGRESS_MAX = 1000; // must match layout
     protected TextView mTextView;
     protected SeekBar mSeekBar;
+
+    private String mLabel = "Workload";
     protected ExponentialTaper mExponentialTaper;
+
+    public interface WorkloadReceiver {
+        void setWorkload(int workload);
+    }
+
+    WorkloadReceiver mWorkloadReceiver;
 
     private SeekBar.OnSeekBarChangeListener mChangeListener = new SeekBar.OnSeekBarChangeListener() {
         @Override
@@ -64,12 +72,8 @@ public class WorkloadView extends LinearLayout {
         initializeViews(context);
     }
 
-    public AudioStreamTester getAudioStreamTester() {
-        return mAudioStreamTester;
-    }
-
-    public void setAudioStreamTester(AudioStreamTester audioStreamTester) {
-        mAudioStreamTester = audioStreamTester;
+    public void setWorkloadReceiver(WorkloadReceiver workloadReceiver) {
+        mWorkloadReceiver = workloadReceiver;
     }
 
     void setFaderNormalizedProgress(double fraction) {
@@ -90,20 +94,34 @@ public class WorkloadView extends LinearLayout {
         mTextView = (TextView) findViewById(R.id.textWorkload);
         mSeekBar = (SeekBar) findViewById(R.id.faderWorkload);
         mSeekBar.setOnSeekBarChangeListener(mChangeListener);
-        mExponentialTaper = new ExponentialTaper(0.0, 100.0, 10.0);
+        setRange(0.0, 100.0);
         //mSeekBar.setProgress(0);
     }
 
+    void setRange(double dMin, double dMax) {
+        mExponentialTaper = new ExponentialTaper(dMin, dMax, 10.0);
+    }
+
     private void setValueByPosition(int progress) {
-        double workload = mExponentialTaper.linearToExponential(
+        int workload = (int) mExponentialTaper.linearToExponential(
                 ((double)progress) / FADER_PROGRESS_MAX);
-        mAudioStreamTester.setWorkload(workload);
-        mTextView.setText("Workload = " + String.format("%6.2f", workload));
+        if (mWorkloadReceiver != null) {
+            mWorkloadReceiver.setWorkload(workload);
+        }
+        mTextView.setText(getLabel() + " = " + String.format(Locale.getDefault(), "%3d", workload));
     }
 
     @Override
     public void setEnabled(boolean enabled) {
         super.setEnabled(enabled);
         mSeekBar.setEnabled(enabled);
+    }
+
+    public String getLabel() {
+        return mLabel;
+    }
+
+    public void setLabel(String label) {
+        this.mLabel = label;
     }
 }

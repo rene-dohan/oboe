@@ -16,10 +16,10 @@
 
 package com.mobileer.oboetester;
 
-import android.content.BroadcastReceiver;
+import static com.mobileer.oboetester.AudioQueryTools.getSystemProperty;
+
 import android.content.Context;
 import android.content.Intent;
-import android.content.IntentFilter;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.graphics.Point;
@@ -46,6 +46,7 @@ public class MainActivity extends BaseOboeTesterActivity {
     public static final String VALUE_TEST_NAME_DATA_PATHS = "data_paths";
     public static final String VALUE_TEST_NAME_OUTPUT = "output";
     public static final String VALUE_TEST_NAME_INPUT = "input";
+    public static final String VALUE_TEST_NAME_CPU_LOAD = "cpu_load";
 
     static {
         // Must match name in CMakeLists.txt
@@ -57,11 +58,10 @@ public class MainActivity extends BaseOboeTesterActivity {
     protected TextView mDeviceView;
     private TextView mVersionTextView;
     private TextView mBuildTextView;
-    private TextView mBluetoothScoStatusView;
     private Bundle mBundleFromIntent;
-    private BroadcastReceiver mScoStateReceiver;
     private CheckBox mWorkaroundsCheckBox;
     private CheckBox mBackgroundCheckBox;
+    private CheckBox mForegroundServiceCheckBox;
     private static String mVersionText;
 
     @Override
@@ -113,39 +113,17 @@ public class MainActivity extends BaseOboeTesterActivity {
         NativeEngine.setWorkaroundsEnabled(false);
 
         mBackgroundCheckBox = (CheckBox) findViewById(R.id.boxEnableBackground);
+        mForegroundServiceCheckBox = (CheckBox) findViewById(R.id.boxEnableForegroundService);
 
         mBuildTextView = (TextView) findViewById(R.id.text_build_info);
-        mBuildTextView.setText(Build.DISPLAY);
-
-        mBluetoothScoStatusView = (TextView) findViewById(R.id.textBluetoothScoStatus);
-        mScoStateReceiver = new BroadcastReceiver() {
-            @Override
-            public void onReceive(Context context, Intent intent) {
-                int state = intent.getIntExtra(AudioManager.EXTRA_SCO_AUDIO_STATE, -1);
-                if (state == AudioManager.SCO_AUDIO_STATE_CONNECTING) {
-                    mBluetoothScoStatusView.setText("CONNECTING");
-                } else if (state == AudioManager.SCO_AUDIO_STATE_CONNECTED) {
-                    mBluetoothScoStatusView.setText("CONNECTED");
-                } else if (state == AudioManager.SCO_AUDIO_STATE_DISCONNECTED) {
-                    mBluetoothScoStatusView.setText("DISCONNECTED");
-                }
-            }
-        };
+        mBuildTextView.setText(Build.DISPLAY
+                + "\n" + getSystemProperty("ro.build.date"));
 
         saveIntentBundleForLaterProcessing(getIntent());
     }
 
     public static String getVersionText() {
         return mVersionText;
-    }
-
-    private void registerScoStateReceiver() {
-        registerReceiver(mScoStateReceiver,
-                new IntentFilter(AudioManager.ACTION_SCO_AUDIO_STATE_UPDATED));
-    }
-
-    private void unregisterScoStateReceiver() {
-        unregisterReceiver(mScoStateReceiver);
     }
 
     private void logScreenSize() {
@@ -159,6 +137,7 @@ public class MainActivity extends BaseOboeTesterActivity {
 
     @Override
     public void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
         saveIntentBundleForLaterProcessing(intent);
     }
 
@@ -173,16 +152,19 @@ public class MainActivity extends BaseOboeTesterActivity {
         }
         Intent intent = getTestIntent(mBundleFromIntent);
         if (intent != null) {
-            setBackgroundFromIntent();
+            setTogglesFromIntent();
             startActivity(intent);
         }
         mBundleFromIntent = null;
     }
 
-    private void setBackgroundFromIntent() {
+    private void setTogglesFromIntent() {
         boolean backgroundEnabled = mBundleFromIntent.getBoolean(
                 IntentBasedTestSupport.KEY_BACKGROUND, false);
         TestAudioActivity.setBackgroundEnabled(backgroundEnabled);
+        boolean foregroundServiceEnabled = mBundleFromIntent.getBoolean(
+                IntentBasedTestSupport.KEY_FOREGROUND_SERVICE, false);
+        TestAudioActivity.setBackgroundEnabled(foregroundServiceEnabled);
     }
 
     private Intent getTestIntent(Bundle bundle) {
@@ -204,6 +186,9 @@ public class MainActivity extends BaseOboeTesterActivity {
             } else if (VALUE_TEST_NAME_OUTPUT.equals(testName)) {
                 intent = new Intent(this, TestOutputActivity.class);
                 intent.putExtras(bundle);
+            } else if (VALUE_TEST_NAME_CPU_LOAD.equals(testName)) {
+                intent = new Intent(this, DynamicWorkloadActivity.class);
+                intent.putExtras(bundle);
             }
         }
         return intent;
@@ -213,14 +198,7 @@ public class MainActivity extends BaseOboeTesterActivity {
     public void onResume(){
         super.onResume();
         mWorkaroundsCheckBox.setChecked(NativeEngine.areWorkaroundsEnabled());
-        registerScoStateReceiver();
         processBundleFromIntent();
-    }
-
-    @Override
-    public void onPause(){
-        unregisterScoStateReceiver();
-        super.onPause();
     }
 
     private void updateNativeAudioUI() {
@@ -286,6 +264,7 @@ public class MainActivity extends BaseOboeTesterActivity {
 
         NativeEngine.setWorkaroundsEnabled(mWorkaroundsCheckBox.isChecked());
         TestAudioActivity.setBackgroundEnabled(mBackgroundCheckBox.isChecked());
+        TestAudioActivity.setForegroundServiceEnabled(mForegroundServiceCheckBox.isChecked());
     }
 
     @Override
@@ -312,20 +291,4 @@ public class MainActivity extends BaseOboeTesterActivity {
         OboeAudioStream.setCallbackSize(callbackSize);
     }
 
-    public void onSetSpeakerphoneOn(View view) {
-        CheckBox checkBox = (CheckBox) view;
-        boolean enabled = checkBox.isChecked();
-        AudioManager myAudioMgr = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
-        myAudioMgr.setSpeakerphoneOn(enabled);
-    }
-
-    public void onStartStopBluetoothSco(View view) {
-        CheckBox checkBox = (CheckBox) view;
-        AudioManager myAudioMgr = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
-        if (checkBox.isChecked()) {
-            myAudioMgr.startBluetoothSco();
-        } else {
-            myAudioMgr.stopBluetoothSco();
-        }
-    }
 }

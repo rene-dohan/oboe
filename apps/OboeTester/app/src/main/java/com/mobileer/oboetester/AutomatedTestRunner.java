@@ -7,10 +7,13 @@ import android.util.AttributeSet;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
+import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
+
+import androidx.annotation.NonNull;
 
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
@@ -184,8 +187,9 @@ public  class AutomatedTestRunner extends LinearLayout implements Runnable {
     private void stopAutoThread() {
         try {
             if (mAutoThread != null) {
-                log("Disable background test thread.");
-                new RuntimeException("Disable background test thread.").printStackTrace();
+                Log.d(TestAudioActivity.TAG,
+                        "Who called stopAutoThread()?",
+                        new RuntimeException("Just for debugging."));
                 mThreadEnabled = false;
                 mAutoThread.interrupt();
                 mAutoThread.join(100);
@@ -231,7 +235,13 @@ public  class AutomatedTestRunner extends LinearLayout implements Runnable {
     }
 
     // Only call from UI thread.
+    public void onTestStarted() {
+        mActivity.getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+    }
+
+    // Only call from UI thread.
     public void onTestFinished() {
+        mActivity.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         updateStartStopButtons(false);
         mShareButton.setEnabled(true);
     }
@@ -262,6 +272,12 @@ public  class AutomatedTestRunner extends LinearLayout implements Runnable {
 
     @Override
     public void run() {
+        mActivity.runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                onTestStarted();
+            }
+        });
         logClear();
         log("=== STARTED at " + new Date());
         log(mActivity.getTestName());
@@ -274,7 +290,7 @@ public  class AutomatedTestRunner extends LinearLayout implements Runnable {
         mFailCount = 0;
         try {
             mActivity.runTest();
-            log("Tests finished without exception.");
+            log("Tests finished.");
         } catch(Exception e) {
             log("EXCEPTION: " + e.getMessage());
         } finally {
@@ -293,10 +309,7 @@ public  class AutomatedTestRunner extends LinearLayout implements Runnable {
             } else {
                 log("No tests were run!");
             }
-            int skipped = mTestCount - (mPassCount + mFailCount);
-            log(mPassCount + " passed. "
-                    + mFailCount + " failed. "
-                    + skipped + " skipped. ");
+            log(getPassFailReport());
             log("== FINISHED at " + new Date());
 
             flushLog();
@@ -311,6 +324,15 @@ public  class AutomatedTestRunner extends LinearLayout implements Runnable {
                 }
             });
         }
+    }
+
+    @NonNull
+    public String getPassFailReport() {
+        int skipped = mTestCount - (mPassCount + mFailCount);
+        String passFailReport = mPassCount + " passed. "
+                + mFailCount + " failed. "
+                + skipped + " skipped. ";
+        return passFailReport;
     }
 
 }

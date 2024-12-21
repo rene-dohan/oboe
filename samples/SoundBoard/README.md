@@ -9,7 +9,6 @@ This sample demonstrates how to obtain the lowest latency and optimal computatio
 3) Setting sharing mode to Exclusive
 4) Setting the buffer size to 2 bursts
 5) Using the `-Ofast` compiler optimization flag, even when building the `Debug` variant
-7) Using a `StabilizedCallback` which aims to spend a fixed percentage of the callback time to avoid CPU frequency scaling ([video explanation](https://www.youtube.com/watch?v=C0BPXZIvG-Q&feature=youtu.be&t=1158))
 
 The [following article explaining how to debug CPU performance problems](https://medium.com/@donturner/debugging-audio-glitches-on-android-ed10782f9c64) may also be useful when looking at this code.
 
@@ -38,7 +37,7 @@ The compiler optimization flag `-Ofast` can be found in [CMakeLists.txt](CMakeLi
 
 Each SynthSound is a series of 5 Oscillators, creating a pleasant sounding note when combined.
 
-There are 30 notes, corresponding to G3 to C6, moving left to right, top to bottom.
+The number of notes depends on the shape of the screen, with G3 being the first note.
 
 In order to determine whether a note should be played, MusicTileView demonstrates how to keep track of where each finger is.
 

@@ -63,35 +63,58 @@ oboe::Result SoundBoardEngine::createPlaybackStream() {
     return builder.setSharingMode(oboe::SharingMode::Exclusive)
             ->setPerformanceMode(oboe::PerformanceMode::LowLatency)
             ->setFormat(oboe::AudioFormat::Float)
-            ->setDataCallback(mDataCallback.get())
-            ->setErrorCallback(mErrorCallback.get())
+            ->setDataCallback(mDataCallback)
+            ->setErrorCallback(mErrorCallback)
             ->openStream(mStream);
 }
 
 // Create the callback and set its thread affinity to the supplied CPU core IDs
 void SoundBoardEngine::createCallback(int32_t numSignals){
 
-    mDataCallback = std::make_unique<DefaultDataCallback>();
+    mDataCallback = std::make_shared<DefaultDataCallback>();
 
     // Create the error callback, we supply ourselves as the parent so that we can restart the stream
     // when it's disconnected
-    mErrorCallback = std::make_unique<DefaultErrorCallback>(*this);
+    mErrorCallback = std::make_shared<DefaultErrorCallback>(*this);
 
     mNumSignals = numSignals;
 }
 
-bool SoundBoardEngine::start(){
+bool SoundBoardEngine::start() {
+    // It is possible for a stream's device to become disconnected during stream open or between
+    // stream open and stream start.
+    // If the stream fails to start, close the old stream and try again.
+    bool didStart = false;
+    int tryCount = 0;
+    do {
+        if (tryCount > 0) {
+            usleep(20 * 1000); // Sleep between tries to give the system time to settle.
+        }
+        didStart = attemptStart();
+    } while (!didStart && tryCount++ < 3);
+    if (!didStart) {
+        LOGE("Failed at starting the stream");
+    }
+    return didStart;
+}
+
+bool SoundBoardEngine::attemptStart() {
     auto result = createPlaybackStream();
 
-    if (result == Result::OK){
+    if (result == Result::OK) {
         // Create our synthesizer audio source using the properties of the stream
         mSynth = Synth::create(mStream->getSampleRate(), mStream->getChannelCount(), mNumSignals);
         mDataCallback->reset();
         mDataCallback->setSource(std::dynamic_pointer_cast<IRenderableAudio>(mSynth));
-        mStream->start();
-        return true;
+        result = mStream->start();
+        if (result == Result::OK) {
+            return true;
+        } else {
+            LOGW("Failed attempt at starting the playback stream. Error: %s", convertToText(result));
+            return false;
+        }
     } else {
-        LOGE("Failed to create the playback stream. Error: %s", convertToText(result));
+        LOGW("Failed attempt at creating the playback stream. Error: %s", convertToText(result));
         return false;
     }
 }

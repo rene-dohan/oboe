@@ -16,7 +16,6 @@
 
 package com.mobileer.oboetester;
 
-import android.app.Activity;
 import android.os.Bundle;
 import android.view.View;
 import android.widget.Button;
@@ -43,7 +42,7 @@ public class EchoActivity extends TestInputActivity {
     private Button mStopButton;
     private TextView mStatusTextView;
 
-    private ColdStartSniffer mNativeSniffer = new ColdStartSniffer(this);
+    private ColdStartSniffer mNativeSniffer = new ColdStartSniffer();
 
     protected static final int MAX_DELAY_TIME_PROGRESS = 1000;
 
@@ -70,10 +69,6 @@ public class EchoActivity extends TestInputActivity {
         private int mInputLatency;
         private int mOutputLatency;
 
-        public ColdStartSniffer(Activity activity) {
-            super(activity);
-        }
-
         @Override
         public void startSniffer() {
             stableCallCount = 0;
@@ -82,16 +77,10 @@ public class EchoActivity extends TestInputActivity {
             super.startSniffer();
         }
 
-        public void run() {
+        @Override
+        public boolean isComplete() {
             mInputLatency = getColdStartInputMillis();
             mOutputLatency = getColdStartOutputMillis();
-            updateStatusText();
-            if (!isComplete()) {
-                reschedule();
-            }
-        }
-
-        private boolean isComplete() {
             if (mInputLatency > 0 && mOutputLatency > 0) {
                 stableCallCount++;
             }
@@ -112,11 +101,6 @@ public class EchoActivity extends TestInputActivity {
                     + "\n");
             message.append("stable.call.count = " + stableCallCount +  "\n");
             return message.toString();
-        }
-
-        @Override
-        public String getShortReport() {
-            return getCurrentStatusReport();
         }
 
         @Override
@@ -158,6 +142,7 @@ public class EchoActivity extends TestInputActivity {
                 100.0);
         mFaderDelayTime.setProgress(MAX_DELAY_TIME_PROGRESS / 2);
 
+        mCommunicationDeviceView = (CommunicationDeviceView) findViewById(R.id.comm_device_view);
         hideSettingsViews();
     }
 
@@ -174,21 +159,24 @@ public class EchoActivity extends TestInputActivity {
         return ACTIVITY_ECHO;
     }
 
-
     @Override
     protected void resetConfiguration() {
         super.resetConfiguration();
         mAudioOutTester.reset();
     }
 
-    public void onStartEcho(View view)  throws IOException {
-        openAudio();
-        startAudio();
-        setDelayTime(mDelayTime);
-        mStartButton.setEnabled(false);
-        mStopButton.setEnabled(true);
-        keepScreenOn(true);
-        mNativeSniffer.startSniffer();
+    public void onStartEcho(View view) {
+        try {
+            openAudio();
+            startAudio();
+            setDelayTime(mDelayTime);
+            mStartButton.setEnabled(false);
+            mStopButton.setEnabled(true);
+            keepScreenOn(true);
+            mNativeSniffer.startSniffer();
+        } catch (IOException e) {
+            showErrorToast(e.getMessage());
+        }
     }
 
     public void onStopEcho(View view) {

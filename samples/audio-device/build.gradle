@@ -1,10 +1,10 @@
 apply plugin: 'com.android.library'
 
 android {
-    compileSdkVersion 33
+    compileSdkVersion 34
     defaultConfig {
         minSdkVersion 21
-        targetSdkVersion 33
+        targetSdkVersion 34
     }
     buildTypes {
         release {
@@ -12,6 +12,7 @@ android {
             proguardFiles getDefaultProguardFile('proguard-android.txt')
         }
     }
+    namespace 'com.google.oboe.samples.audio_device'
 }
 
 dependencies {
