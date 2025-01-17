@@ -16,21 +16,16 @@
 
 package com.mobileer.oboetester;
 
-import android.Manifest;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
-import android.support.annotation.NonNull;
-import android.support.v4.app.ActivityCompat;
-import android.support.v4.content.ContextCompat;
 import android.widget.Toast;
 
-import java.io.File;
-import java.io.FileOutputStream;
+import androidx.annotation.NonNull;
+
 import java.io.IOException;
-import java.io.OutputStreamWriter;
-import java.io.Writer;
+import java.util.Locale;
 
 /**
  * Activity to measure latency on a full duplex stream.
@@ -78,8 +73,8 @@ public class AnalyzerActivity extends TestInputActivity {
         report.append("build.fingerprint = " + Build.FINGERPRINT + "\n");
         try {
             PackageInfo pinfo = getPackageManager().getPackageInfo(getPackageName(), 0);
-            report.append(String.format("test.version = %s\n", pinfo.versionName));
-            report.append(String.format("test.version.code = %d\n", pinfo.versionCode));
+            report.append(String.format(Locale.getDefault(), "test.version = %s\n", pinfo.versionName));
+            report.append(String.format(Locale.getDefault(), "test.version.code = %d\n", pinfo.versionCode));
         } catch (PackageManager.NameNotFoundException e) {
         }
         report.append("time.millis = " + System.currentTimeMillis() + "\n");
@@ -87,18 +82,18 @@ public class AnalyzerActivity extends TestInputActivity {
         // INPUT
         report.append(mAudioInputTester.actualConfiguration.dump());
         AudioStreamBase inStream = mAudioInputTester.getCurrentAudioStream();
-        report.append(String.format("in.burst.frames = %d\n", inStream.getFramesPerBurst()));
-        report.append(String.format("in.xruns = %d\n", inStream.getXRunCount()));
+        report.append(String.format(Locale.getDefault(), "in.burst.frames = %d\n", inStream.getFramesPerBurst()));
+        report.append(String.format(Locale.getDefault(), "in.xruns = %d\n", inStream.getXRunCount()));
 
         // OUTPUT
         report.append(mAudioOutTester.actualConfiguration.dump());
         AudioStreamBase outStream = mAudioOutTester.getCurrentAudioStream();
-        report.append(String.format("out.burst.frames = %d\n", outStream.getFramesPerBurst()));
+        report.append(String.format(Locale.getDefault(), "out.burst.frames = %d\n", outStream.getFramesPerBurst()));
         int bufferSize = outStream.getBufferSizeInFrames();
-        report.append(String.format("out.buffer.size.frames = %d\n", bufferSize));
+        report.append(String.format(Locale.getDefault(), "out.buffer.size.frames = %d\n", bufferSize));
         int bufferCapacity = outStream.getBufferCapacityInFrames();
-        report.append(String.format("out.buffer.capacity.frames = %d\n", bufferCapacity));
-        report.append(String.format("out.xruns = %d\n", outStream.getXRunCount()));
+        report.append(String.format(Locale.getDefault(), "out.buffer.capacity.frames = %d\n", bufferCapacity));
+        report.append(String.format(Locale.getDefault(), "out.xruns = %d\n", outStream.getXRunCount()));
 
         return report.toString();
     }
@@ -160,11 +155,4 @@ public class AnalyzerActivity extends TestInputActivity {
         }
     }
 
-    private void writeTestInBackground(final String resultString) {
-        new Thread() {
-            public void run() {
-                writeTestResult(resultString);
-            }
-        }.start();
-    }
 }

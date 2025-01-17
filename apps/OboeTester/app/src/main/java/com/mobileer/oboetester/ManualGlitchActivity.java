@@ -16,13 +16,21 @@
 
 package com.mobileer.oboetester;
 
+import android.content.Context;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.util.Log;
+import android.view.View;
+import android.widget.CheckBox;
+import android.widget.LinearLayout;
+import android.widget.RadioButton;
+import android.widget.RadioGroup;
 import android.widget.SeekBar;
 import android.widget.TextView;
 
 import java.io.IOException;
+import java.util.Locale;
 
 public class ManualGlitchActivity extends GlitchActivity {
 
@@ -30,15 +38,24 @@ public class ManualGlitchActivity extends GlitchActivity {
     public static final int VALUE_DEFAULT_BUFFER_BURSTS = 2;
 
     public static final String KEY_TOLERANCE = "tolerance";
-    private static final float DEFAULT_TOLERANCE = 0.1f;
+    private static final float DEFAULT_TOLERANCE = 0.10f;
 
     private static final long MIN_DISPLAY_PERIOD_MILLIS = 500;
+    private static final int WAVEFORM_SIZE = 400;
 
     private TextView mTextTolerance;
     private SeekBar mFaderTolerance;
     protected ExponentialTaper mTaperTolerance;
+
+    private CheckBox mForceGlitchesBox;
+    private CheckBox mAutoScopeBox;
     private WaveformView mWaveformView;
-    private float[] mWaveform = new float[256];
+    private LinearLayout mLayoutGlitch;
+
+
+    private NumberedRadioButtons mInputChannelBoxes;
+    private NumberedRadioButtons mOutputChannelBoxes;
+    private float[] mWaveform = new float[WAVEFORM_SIZE];
     private long mLastDisplayTime;
 
     private float   mTolerance = DEFAULT_TOLERANCE;
@@ -62,7 +79,56 @@ public class ManualGlitchActivity extends GlitchActivity {
         float tolerance = (float) mTaperTolerance.linearToExponential(
                 ((double)progress) / FADER_PROGRESS_MAX);
         setTolerance(tolerance);
-        mTextTolerance.setText("Tolerance = " + String.format("%5.3f", tolerance));
+        mTextTolerance.setText("Tolerance = " + String.format(Locale.getDefault(), "%5.3f", tolerance));
+    }
+
+    static class NumberedRadioButtons {
+        LinearLayout mRow;
+        RadioButton[] mRadioButtons;
+
+        public interface SelectionListener {
+            void onSelected(int index);
+        }
+
+        NumberedRadioButtons(Context context, int numBoxes, SelectionListener listener, String prompt) {
+            mRow = new LinearLayout(context);
+            mRow.setOrientation(LinearLayout.HORIZONTAL);
+            TextView textView = new TextView(context);
+            textView.setText(prompt);
+            mRow.addView(textView);
+            RadioGroup rg = new RadioGroup(context);
+            rg.setOrientation(LinearLayout.HORIZONTAL);
+            mRadioButtons = new RadioButton[numBoxes];
+            for (int i = 0; i < numBoxes; i++) {
+                mRadioButtons[i] = new RadioButton(context);
+                mRadioButtons[i].setText("" + i);
+                mRadioButtons[i].setId(i);
+                rg.addView(mRadioButtons[i]);
+            }
+            mRow.addView(rg);
+
+            //set listener to radio button group
+            rg.setOnCheckedChangeListener(new RadioGroup.OnCheckedChangeListener() {
+                @Override
+                public void onCheckedChanged(RadioGroup group, int checkedId) {
+                    listener.onSelected(checkedId);
+                 }
+            });
+
+            mRadioButtons[0].setChecked(true);
+        }
+
+        public View getView() {
+            return mRow;
+        }
+
+        public void setMaxEnabled(int max) {
+            max = Math.min(max, mRadioButtons.length);
+            for (int i = 0; i < mRadioButtons.length; i++) {
+                mRadioButtons[i].setEnabled(i < max);
+            }
+            mRadioButtons[0].setChecked(true);
+        }
     }
 
     @Override
@@ -75,7 +141,17 @@ public class ManualGlitchActivity extends GlitchActivity {
         mFaderTolerance.setOnSeekBarChangeListener(mToleranceListener);
         setToleranceFader(DEFAULT_TOLERANCE);
 
+        mForceGlitchesBox = (CheckBox) findViewById(R.id.boxForceGlitch);
+        mAutoScopeBox = (CheckBox) findViewById(R.id.boxAutoScope);
         mWaveformView = (WaveformView) findViewById(R.id.waveview_audio);
+
+        mLayoutGlitch = (LinearLayout) findViewById(R.id.layoutGlitch);
+        mInputChannelBoxes = new NumberedRadioButtons(this, 8,
+                (int index) -> setInputChannel(index), "IN:");
+        mLayoutGlitch.addView(mInputChannelBoxes.getView());
+        mOutputChannelBoxes = new NumberedRadioButtons(this, 8,
+                (int index) -> setOutputChannel(index), "OUT:");
+        mLayoutGlitch.addView(mOutputChannelBoxes.getView());
     }
 
     private void setToleranceFader(float tolerance) {
@@ -112,7 +188,12 @@ public class ManualGlitchActivity extends GlitchActivity {
 
     public void startAudioTest() throws IOException {
         super.startAudioTest();
+
         setToleranceProgress(mFaderTolerance.getProgress());
+        int inChannels = mAudioInputTester.getCurrentAudioStream().getChannelCount();
+        mInputChannelBoxes.setMaxEnabled(inChannels);
+        int outChannels = mAudioOutTester.getCurrentAudioStream().getChannelCount();
+        mOutputChannelBoxes.setMaxEnabled(outChannels);
     }
 
     @Override
@@ -123,7 +204,7 @@ public class ManualGlitchActivity extends GlitchActivity {
         int numBursts = mBundleFromIntent.getInt(KEY_BUFFER_BURSTS, VALUE_DEFAULT_BUFFER_BURSTS);
 
         try {
-            onStartAudioTest(null);
+            openStartAudioTestUI();
             int sizeFrames = mAudioOutTester.getCurrentAudioStream().getFramesPerBurst() * numBursts;
             mAudioOutTester.getCurrentAudioStream().setBufferSizeInFrames(sizeFrames);
 
@@ -147,7 +228,7 @@ public class ManualGlitchActivity extends GlitchActivity {
 
     void stopAutomaticTest() {
         String report = getCommonTestReport()
-                + String.format("tolerance = %5.3f\n", mTolerance)
+                + String.format(Locale.getDefault(), "tolerance = %5.3f\n", mTolerance)
                 + mLastGlitchReport;
         onStopAudioTest(null);
         maybeWriteTestResult(report);
@@ -156,12 +237,8 @@ public class ManualGlitchActivity extends GlitchActivity {
 
     // Only call from UI thread.
     @Override
-    public void onTestFinished() {
-        super.onTestFinished();
-    }
-    // Only call from UI thread.
-    @Override
     public void onTestBegan() {
+        mAutoScopeBox.setChecked(true);
         mWaveformView.clearSampleData();
         mWaveformView.postInvalidate();
         super.onTestBegan();
@@ -170,19 +247,45 @@ public class ManualGlitchActivity extends GlitchActivity {
     // Called on UI thread
     @Override
     protected void onGlitchDetected() {
+        if (mAutoScopeBox.isChecked()) {
+            mAutoScopeBox.setChecked(false); // stop auto drawing of waveform
+            mLastDisplayTime = 0; // force draw first glitch
+        }
         long now = System.currentTimeMillis();
+        Log.i(TAG,"onGlitchDetected: glitch");
         if ((now - mLastDisplayTime) > MIN_DISPLAY_PERIOD_MILLIS) {
             mLastDisplayTime = now;
             int numSamples = getGlitch(mWaveform);
             mWaveformView.setSampleData(mWaveform, 0, numSamples);
+            int glitchLength = getGlitchLength();
+            int[] cursors = new int[glitchLength > 0 ? 2 : 1];
+            int startOfGlitch = getSinePeriod();
+            cursors[0] = startOfGlitch;
+            if (glitchLength > 0) {
+                cursors[1] = startOfGlitch + getGlitchLength();
+            }
+            mWaveformView.setCursorData(cursors);
+            Log.i(TAG,"onGlitchDetected: glitch, numSamples = " + numSamples);
+            mWaveformView.postInvalidate();
+        }
+    }
+    @Override
+    protected void maybeDisplayWaveform() {
+        if (!mAutoScopeBox.isChecked()) return;
+        long now = System.currentTimeMillis();
+        if ((now - mLastDisplayTime) > MIN_DISPLAY_PERIOD_MILLIS) {
+            mLastDisplayTime = now;
+            int numSamples = getRecentSamples(mWaveform);
+            mWaveformView.setSampleData(mWaveform, 0, numSamples);
+            mWaveformView.setCursorData(null);
             mWaveformView.postInvalidate();
         }
     }
 
-    private float[] getGlitchWaveform() {
-        return mWaveform;
-    }
-
     private native int getGlitch(float[] mWaveform);
+    private native int getRecentSamples(float[] mWaveform);
 
+    public void onForceGlitchClicked(View view) {
+        setForcedGlitchDuration(mForceGlitchesBox.isChecked() ? 100 : 0);
+    }
 }

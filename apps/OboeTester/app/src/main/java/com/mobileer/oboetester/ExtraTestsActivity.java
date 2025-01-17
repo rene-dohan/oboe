@@ -1,7 +1,5 @@
 package com.mobileer.oboetester;
 
-import android.content.Intent;
-import android.app.Activity;
 import android.os.Bundle;
 import android.view.View;
 
@@ -29,4 +27,19 @@ public class ExtraTestsActivity extends BaseOboeTesterActivity {
         launchTestActivity(TestErrorCallbackActivity.class);
     }
 
+    public void onLaunchRouteDuringCallbackTest(View view) {
+        launchTestThatDoesRecording(TestRouteDuringCallbackActivity.class);
+    }
+
+    public void onLaunchDynamicWorkloadTest(View view) {
+        launchTestActivity(DynamicWorkloadActivity.class);
+    }
+
+    public void onLaunchColdStartLatencyTest(View view) {
+        launchTestActivity(TestColdStartLatencyActivity.class);
+    }
+
+    public void onLaunchRapidCycleTest(View view) {
+        launchTestActivity(TestRapidCycleActivity.class);
+    }
 }

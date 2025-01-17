@@ -17,11 +17,24 @@
 #include "common/OboeDebug.h"
 #include "InputStreamCallbackAnalyzer.h"
 
+double InputStreamCallbackAnalyzer::getPeakLevel(int index) {
+    if (mPeakDetectors == nullptr) {
+        LOGE("%s() called before setup()", __func__);
+        return -1.0;
+    } else if (index < 0 || index >= mNumChannels) {
+        LOGE("%s(), index out of range, 0 <= %d < %d", __func__, index, mNumChannels);
+        return -2.0;
+    }
+    return mPeakDetectors[index].getLevel();
+}
+
 oboe::DataCallbackResult InputStreamCallbackAnalyzer::onAudioReady(
         oboe::AudioStream *audioStream,
         void *audioData,
         int numFrames) {
     int32_t channelCount = audioStream->getChannelCount();
+
+    maybeHang(getNanoseconds());
     printScheduler();
     mInputConverter->convertToInternalOutput(numFrames * channelCount, audioData);
     float *floatData = (float *) mInputConverter->getOutputBuffer();

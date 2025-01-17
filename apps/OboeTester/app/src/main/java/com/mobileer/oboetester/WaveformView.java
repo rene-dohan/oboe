@@ -27,6 +27,7 @@ import android.view.View;
 
 /**
  * Display an audio waveform in a custom View.
+ * Data is assumed to have a constant x-axis increment, ie. isochronous.
  */
 public class WaveformView extends View {
     private static final float MESSAGE_TEXT_SIZE = 80;
@@ -76,8 +77,9 @@ public class WaveformView extends View {
     protected void onSizeChanged(int w, int h, int oldw, int oldh) {
         mCurrentWidth = w;
         mCurrentHeight = h;
-        mOffsetY = 0.5f * h;
-        mScaleY = 0.0f - mOffsetY;
+        mOffsetY = 0.5f * h; // Center waveform vertically in the viewport.
+        // Scale down so that we can see the top of the waveforms if they are clipped.
+        mScaleY = -0.95f * mOffsetY; // Negate so positive values are on top.
     }
 
     public String getMessage() {
@@ -105,12 +107,23 @@ public class WaveformView extends View {
         if (localData == null || mSampleCount == 0) {
             return;
         }
+
         float xScale = ((float) mCurrentWidth) / (mSampleCount - 1);
+
+        // Draw cursors.
+        if (mCursors != null) {
+            for (int i = 0; i < mCursors.length; i++) {
+                float x = mCursors[i] * xScale;
+                canvas.drawLine(x, 0, x, mCurrentHeight, mCursorPaint);
+            }
+        }
+
+        // Draw waveform.
         float x0 = 0.0f;
         if (xScale < 1.0) {
             // Draw a vertical bar for multiple samples.
-            float ymin = mOffsetY;
-            float ymax = mOffsetY;
+            float ymin = mOffsetY; // vertical center
+            float ymax = mOffsetY; // vertical center
             for (int i = 0; i < mSampleCount; i++) {
                 float x1 = i * xScale;
                 if ((int) x0 != (int) x1) {
@@ -135,16 +148,11 @@ public class WaveformView extends View {
                 y0 = y1;
             }
         }
-        if (mCursors != null) {
-            for (int i = 0; i < mCursors.length; i++) {
-                float x = mCursors[i] * xScale;
-                canvas.drawLine(x, 0, x, mCurrentHeight, mCursorPaint);
-            }
-        }
     }
 
     /**
-     * Copy data into internal buffer then repaint.
+     * Copy data into internal buffer.
+     * Caller should then postInvalidate().
      */
     public void setSampleData(float[] samples) {
         setSampleData(samples, 0, samples.length);
@@ -170,7 +178,8 @@ public class WaveformView extends View {
     }
 
     /**
-     * Copy cursor positions into internal buffer then repaint.
+     * Copy cursor positions into internal buffer.
+     * Caller should then postInvalidate().
      */
     public void setCursorData(int[] cursors) {
         if (cursors == null) {

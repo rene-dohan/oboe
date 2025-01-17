@@ -41,6 +41,18 @@ public:
         setNoiseAmplitude(0.02);
     }
 
+    double calculatePhaseError(double p1, double p2) {
+        double diff = p1 - p2;
+        // Wrap around the circle.
+        while (diff > M_PI) {
+            diff -= (2 * M_PI);
+        }
+        while (diff < -M_PI) {
+            diff += (2 * M_PI);
+        }
+        return diff;
+    }
+
     /**
      * @param frameData contains microphone data with sine signal feedback
      * @param channelCount
@@ -51,14 +63,15 @@ public:
         float sample = frameData[getInputChannel()];
         mInfiniteRecording.write(sample);
 
-        if (transformSample(sample, mOutputPhase)) {
-            resetAccumulator();
+        if (transformSample(sample)) {
             // Analyze magnitude and phase on every period.
-            double diff = abs(mPhaseOffset - mPreviousPhaseOffset);
-            if (diff < mPhaseTolerance) {
-                mMaxMagnitude = std::max(mMagnitude, mMaxMagnitude);
+            if (mPhaseOffset != kPhaseInvalid) {
+                double diff = fabs(calculatePhaseError(mPhaseOffset, mPreviousPhaseOffset));
+                if (diff < mPhaseTolerance) {
+                    mMaxMagnitude = std::max(mMagnitude, mMaxMagnitude);
+                }
+                mPreviousPhaseOffset = mPhaseOffset;
             }
-            mPreviousPhaseOffset = mPhaseOffset;
         }
         return result;
     }
